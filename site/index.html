@@ -1,0 +1,707 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Intraday Top 5</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,400..800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root {
+  --bg: #F3F4F8; --surface: #FFFFFF; --line: #DCDFE8; --text: #1B1F2E; --muted: #5F6780;
+  --long: #10956A; --short: #D63D4B; --entry: #C98A0B; --focus: #3D5AFE;
+  --long-soft: rgba(16,149,106,.12); --short-soft: rgba(214,61,75,.12);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1B1F2E; --surface: #242A3D; --line: #343C55; --text: #E8EAF2; --muted: #9AA2B9;
+    --long: #34C38F; --short: #F0616D; --entry: #F5B83D; --focus: #8C9EFF;
+    --long-soft: rgba(52,195,143,.14); --short-soft: rgba(240,97,109,.14);
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font-family: "Archivo", system-ui, sans-serif; font-size: 15px; line-height: 1.45;
+       font-variant-numeric: tabular-nums; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+header { display: flex; align-items: center; gap: 16px; padding: 14px 24px;
+         border-bottom: 1px solid var(--line); background: var(--surface); }
+h1 { margin: 0; font-size: 22px; font-weight: 800; font-stretch: 80%; letter-spacing: -.01em; }
+#status { color: var(--muted); font-size: 13px; flex: 1; }
+.btn { border: 1px solid var(--line); background: var(--surface); padding: 8px 16px; border-radius: 6px;
+       cursor: pointer; font-weight: 600; }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn:disabled { opacity: .55; cursor: progress; }
+#note { display: none; padding: 10px 24px; background: var(--surface); border-bottom: 1px solid var(--line);
+        color: var(--entry); font-weight: 600; font-size: 14px; }
+
+.tabs { display: flex; gap: 4px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; background: none; padding: 10px 14px; cursor: pointer; font-weight: 600; color: var(--muted);
+               box-shadow: inset 0 -2px 0 transparent; }
+.tabs button[aria-selected="true"] { color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
+.honest { margin: 14px 20px 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--surface); font-size: 13px; color: var(--muted); }
+.honest b { color: var(--text); }
+.caps { display: flex; align-items: center; gap: 6px; margin: 14px 20px 0; font-size: 13px; color: var(--muted); }
+.caps button { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 3px 12px;
+               cursor: pointer; font-weight: 600; font-size: 13px; }
+.caps button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+main { display: grid; grid-template-columns: minmax(320px, 400px) 1fr; min-height: calc(100vh - 62px); }
+#list { border-right: 1px solid var(--line); overflow-y: auto; }
+#detail { padding: 20px 28px; min-width: 0; }
+
+.pick { display: block; width: 100%; text-align: left; border: 0; border-bottom: 1px solid var(--line);
+        background: transparent; padding: 14px 20px 16px; cursor: pointer; }
+.pick:hover { background: var(--surface); }
+.pick[aria-current="true"] { background: var(--surface); box-shadow: inset 3px 0 0 var(--text); }
+.row1 { display: flex; align-items: baseline; gap: 10px; }
+.rank { color: var(--muted); font-weight: 700; width: 14px; }
+.sym { font-weight: 800; font-size: 17px; font-stretch: 85%; }
+.side { font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 4px; }
+.side.LONG { color: var(--long); background: var(--long-soft); }
+.side.SHORT { color: var(--short); background: var(--short-soft); }
+.ltp { margin-left: auto; font-weight: 700; font-size: 16px; transition: color .4s; }
+.ltp.up { color: var(--long); } .ltp.down { color: var(--short); }
+.row2 { display: flex; gap: 14px; margin: 4px 0 0 24px; color: var(--muted); font-size: 13px; }
+.row2 b { color: var(--text); font-weight: 600; }
+
+/* The level ladder: stop on the left, target on the right, for both longs and shorts */
+.ladder { position: relative; height: 22px; margin: 10px 0 0 24px; }
+.ladder .track { position: absolute; top: 9px; left: 0; right: 0; height: 4px; border-radius: 2px;
+                 background: linear-gradient(90deg, var(--short) 0 var(--e), var(--long) var(--e) 100%); opacity: .35; }
+.ladder .tick { position: absolute; top: 4px; width: 2px; height: 14px; background: var(--entry); }
+.ladder .dot { position: absolute; top: 4px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%;
+               background: var(--text); border: 3px solid var(--surface); transition: left .6s ease; }
+.ladder .lbl { position: absolute; top: 0; font-size: 11px; color: var(--muted); }
+.state { font-size: 12px; margin: 6px 0 0 24px; color: var(--muted); }
+.state.hit-t { color: var(--long); font-weight: 700; } .state.hit-s { color: var(--short); font-weight: 700; }
+
+.group { padding: 16px 20px 6px; color: var(--muted); font-size: 13px; font-weight: 600; }
+.empty { padding: 32px 24px; color: var(--muted); }
+.empty p { max-width: 34ch; }
+
+.dhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+.dhead h2 { margin: 0; font-size: 34px; font-weight: 800; font-stretch: 78%; letter-spacing: -.01em; }
+.dhead .company { color: var(--muted); }
+.dhead .gcheck { margin-left: auto; font-size: 13px; font-weight: 600; color: var(--focus); }
+.levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px;
+          background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 16px 0; }
+.levels div { background: var(--surface); padding: 10px 14px; }
+.levels span { display: block; color: var(--muted); font-size: 12px; }
+.levels strong { font-size: 20px; font-weight: 700; }
+.levels small { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.levels .e strong { color: var(--entry); } .levels .t strong { color: var(--long); } .levels .s strong { color: var(--short); }
+/* Trade plan: signal candle -> entry -> exit, with times */
+.plan { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line);
+        border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin: 0 0 16px; }
+.plan > div { background: var(--surface); padding: 10px 14px; font-size: 14px; }
+.plan .step { display: block; color: var(--muted); font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.plan b { font-weight: 700; }
+.plan .done { color: var(--long); } .plan .bad { color: var(--short); } .plan .wait { color: var(--entry); }
+#chart { height: 440px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 12px; color: var(--muted); margin: 8px 0 20px; }
+.legend i { display: inline-block; width: 14px; height: 2px; vertical-align: middle; margin-right: 6px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.cols h3 { font-size: 15px; margin: 0 0 8px; }
+.cols ul { margin: 0; padding-left: 18px; max-width: 60ch; }
+.cols li { margin-bottom: 4px; }
+.news a { color: var(--text); }
+.news small { color: var(--muted); }
+.stats { color: var(--muted); font-size: 13px; margin-top: 6px; max-width: 70ch; }
+footer { padding: 16px 28px 28px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 860px) {
+  header { padding: 12px 16px; flex-wrap: wrap; }
+  .tabs { padding: 0 8px; }
+  main { grid-template-columns: 1fr; }
+  #list { border-right: 0; border-bottom: 1px solid var(--line); }
+  #detail { padding: 16px; }
+  #chart { height: 340px; }
+  .cols { grid-template-columns: 1fr; }
+  .plan { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Intraday Top 5</h1>
+  <div id="status" aria-live="polite">Loading…</div>
+  <a class="btn" id="kite" href="/kite/login" hidden>Connect Kite</a>
+  <button class="btn primary" id="scanBtn">Scan now</button>
+</header>
+<div class="tabs" role="tablist" aria-label="Which list">
+  <button role="tab" data-mode="today" aria-selected="true">Today (intraday)</button>
+  <button role="tab" data-mode="next" aria-selected="false">Next day</button>
+  <button role="tab" data-mode="low" aria-selected="false">Low price (next day)</button>
+</div>
+<div id="note" role="status"></div>
+<main>
+  <nav id="list" aria-label="Picks"></nav>
+  <section id="detail" aria-live="polite"></section>
+</main>
+<footer>Picks come from fixed chart and indicator rules plus a news read. They can be wrong.
+Historical win rate is measured on this stock's last few weeks of 5-minute data and does not guarantee future results.
+Not investment advice.</footer>
+
+<script>
+window.STATIC_SITE = true;
+const $ = (s, el = document) => el.querySelector(s);
+const fmt = n => n == null ? "–" : Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+let data = null, picks = [], selected = null, chart = null, candle = null, volS = null, vwapS = null, lastBar = null;
+let prevClose = null, curPlan = null, curBars = [];   // open chart: yesterday's close, trade plan, candles
+let mode = "today", nextData = null, nextPicks = [];
+const sel = {};                        // last selected stock per tab
+const LOW_CAPS = [200, 500, 1000];
+let lowCap = 500;                      // price limit on the Low price tab
+const prices = {};
+
+// On GitHub Pages there is no server: build_site.py saved each API answer as a JSON file.
+const STATIC = !!window.STATIC_SITE;
+const fileKey = s => s.replace(/[^A-Za-z0-9-]/g, "_");   // same rule as key() in build_site.py
+function staticPath(path) {
+  const [p, qs] = path.split("?"), q = new URLSearchParams(qs), [, , name, sym] = p.split("/");
+  if (name === "candles" || name === "daily") return `api/${name}/${fileKey(decodeURIComponent(sym))}.json`;
+  if (name === "nextday") return `api/nextday-${q.get("list")}${q.get("list") === "low" ? `-${q.get("max_price")}` : ""}.json`;
+  return `api/${name}.json`;   // status, results, ltp
+}
+
+async function api(path, opts) {
+  if (STATIC) path = `${staticPath(path)}?t=${Math.floor(Date.now() / 30000)}`;   // skip stale browser cache
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  return r.json();
+}
+
+/* ---------- status + scanning ---------- */
+let wasScanning = false;
+async function pollStatus() {
+  const st = await api("/api/status").catch(e => ({ error: e.message }));
+  if (mode !== "today") { setTimeout(pollStatus, 5000); return; }
+  const btn = $("#scanBtn");
+  $("#kite").hidden = !(st.broker === "kite" && !st.broker_ready);
+  btn.disabled = !!st.scanning || st.broker_ready === false;
+  btn.textContent = STATIC ? "Reload" : st.scanning ? "Scanning…" : "Scan now";
+  if (STATIC) {   // a new scan lands every few minutes; pick it up when it does
+    if (st.has_result && (!data || st.generated_at !== data.generated_at)) await loadResults();
+    else if (data) describe();
+    setTimeout(pollStatus, 60000);
+    return;
+  }
+  if (st.scanning) {
+    $("#status").textContent = st.stage ? `${st.stage}${st.total > 1 ? ` ${st.done} of ${st.total}` : ""}` : "Starting scan";
+  } else if (st.broker_ready === false) {
+    $("#status").textContent = "Kite is not connected. Connect Kite to log in for today, then scan.";
+  } else if (st.error) {
+    $("#status").textContent = `Scan failed: ${st.error}`;
+  } else if (data) {
+    describe();
+  }
+  const finished = wasScanning && !st.scanning;
+  wasScanning = !!st.scanning;
+  if (!st.scanning && st.has_result && (!data || finished)) await loadResults();
+  else if (!st.scanning && !st.has_result && !data) renderEmpty();
+  setTimeout(pollStatus, st.scanning ? 1500 : 5000);
+}
+
+function describe() {
+  const t = new Date(data.generated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const src = { mock: "sample data", yahoo: "Yahoo Finance (may lag a few minutes)" }[data.broker] || "Kite";
+  $("#status").textContent = `Scanned ${data.eligible} stocks at ${t} from ${src}. ${data.signals} setups found` +
+    (data.news_scored ? "." : ". News scoring is off (no Claude API key).") +
+    (STATIC ? " Updates every 5 minutes while the market is open." : "");
+}
+
+$("#scanBtn").onclick = async () => {
+  if (mode !== "today") return loadNext(true);
+  if (STATIC) return loadResults();
+  try { await api("/api/scan", { method: "POST" }); wasScanning = true; }
+  catch (e) { $("#status").textContent = e.message; }
+};
+
+/* ---------- results list ---------- */
+async function loadResults() {
+  try { data = await api("/api/results"); } catch { renderEmpty(); return; }
+  picks = data.top;
+  if (mode === "today") showToday();
+}
+
+function showToday() {
+  describe();
+  const note = $("#note");
+  note.style.display = data.note ? "block" : "none";
+  note.textContent = data.note || "";
+  renderList();
+  if (!picks.length) { renderEmpty(); return; }
+  select(picks.find(p => p.symbol === selected)?.symbol || picks[0].symbol, false);
+}
+
+function renderEmpty() {
+  $("#list").innerHTML = `<div class="empty"><p>${data ? "No stock passed every check in the last scan. Scan again in a few minutes." :
+    "No scan yet. Select Scan now to rank today's stocks."}</p></div>`;
+  $("#detail").innerHTML = "";
+}
+
+function ladderPos(p, price) {
+  const span = p.target - p.stop_loss;
+  return Math.max(0, Math.min(1, (price - p.stop_loss) / span));
+}
+
+function pickState(p, price) {
+  const s = p.direction === "LONG" ? 1 : -1;
+  if ((price - p.target) * s >= 0) return ["Target reached", "hit-t"];
+  if ((price - p.stop_loss) * s <= 0) return ["Stop reached", "hit-s"];
+  if ((price - p.entry) * s >= 0) return ["Past entry", ""];
+  return [`Waiting for ${p.direction === "LONG" ? "a move above" : "a move below"} ${fmt(p.entry)}`, ""];
+}
+
+function pickHTML(p, i) {
+  const price = prices[p.symbol] ?? p.ltp;
+  const e = ladderPos(p, p.entry) * 100, now = ladderPos(p, price) * 100;
+  const [state, cls] = pickState(p, price);
+  const bt = p.backtest;
+  const hist = bt.win_rate == null ? "no history" : `${Math.round(bt.win_rate * 100)}% of ${bt.trades}`;
+  return `<button class="pick" data-sym="${esc(p.symbol)}" aria-current="${p.symbol === selected}">
+    <div class="row1"><span class="rank">${i + 1}</span><span class="sym">${esc(p.symbol)}</span>
+      <span class="side ${p.direction}">${p.direction === "LONG" ? "Buy" : "Sell"}</span>
+      <span class="ltp" data-ltp="${esc(p.symbol)}">${fmt(price)}</span></div>
+    <div class="row2"><span>Confidence <b>${p.confidence}%</b></span><span>Past win rate <b>${hist}</b></span></div>
+    <div class="ladder" style="--e:${e}%" aria-label="Price between stop ${fmt(p.stop_loss)} and target ${fmt(p.target)}">
+      <div class="track"></div><div class="tick" style="left:${e}%"></div>
+      <div class="dot" data-dot="${esc(p.symbol)}" style="left:${now}%"></div>
+    </div>
+    <div class="state ${cls}" data-state="${esc(p.symbol)}">${state}</div>
+  </button>`;
+}
+
+function renderList() {
+  let html = picks.map(pickHTML).join("");
+  if (data.watchlist?.length) {
+    html += `<div class="group">Also close</div>` +
+      data.watchlist.map(p => `<button class="pick" data-sym="${esc(p.symbol)}" data-watch>
+        <div class="row1"><span class="sym">${esc(p.symbol)}</span><span class="side ${p.direction}">${p.direction === "LONG" ? "Buy" : "Sell"}</span>
+        <span class="ltp">${fmt(p.ltp)}</span></div></button>`).join("");
+  }
+  $("#list").innerHTML = html;
+  $("#list").querySelectorAll(".pick").forEach(b => b.onclick = () => select(b.dataset.sym, true));
+}
+
+/* ---------- detail + chart ---------- */
+// Prices come from Yahoo; this lets anyone compare them with Google Finance in one click
+const googleLink = sym => `<a class="gcheck" href="https://www.google.com/finance/quote/${encodeURIComponent(sym)}:NSE"
+  target="_blank" rel="noopener">Check price on Google ↗</a>`;
+
+function findPick(sym) { return [...data.top, ...(data.watchlist || [])].find(p => p.symbol === sym); }
+
+async function select(sym, scroll) {
+  selected = sym;
+  document.querySelectorAll(".pick").forEach(b => b.setAttribute("aria-current", b.dataset.sym === sym));
+  const p = findPick(sym);
+  const bt = p.backtest, ix = p.indicators, ch = p.chart;
+  const btText = bt.win_rate == null
+    ? "Not enough past setups on this stock to measure a win rate."
+    : `Over the last ${bt.sessions} sessions this setup came up ${bt.trades} times on ${esc(p.symbol)}: ` +
+      `${bt.wins} hit target, ${bt.losses} hit stop, the rest closed at day end. Average result ${bt.avg_r > 0 ? "+" : ""}${bt.avg_r}R.` +
+      (bt.reliable ? "" : " Small sample, treat with caution.");
+  const news = p.news.headlines?.length
+    ? `<p class="stats">${esc(p.news.summary)}</p><ul>${p.news.headlines.map(h =>
+        `<li><a href="${esc(h.link)}" target="_blank" rel="noopener">${esc(h.title)}</a> <small>${esc(h.source)}</small></li>`).join("")}</ul>`
+    : `<p class="stats">No headlines in the last day and a half.</p>`;
+
+  $("#detail").innerHTML = `
+    <div class="dhead"><h2>${esc(p.symbol)}</h2><span class="side ${p.direction}">${p.direction === "LONG" ? "Buy" : "Sell"} setup</span>
+      <span class="company">${esc(p.name)}</span>${googleLink(p.symbol)}</div>
+    <div class="levels">
+      <div><span>Live price</span><strong data-ltp="${esc(p.symbol)}">${fmt(prices[p.symbol] ?? p.ltp)}</strong></div>
+      <div class="e"><span>Entry (${p.direction === "LONG" ? "buy above" : "sell below"})</span><strong>${fmt(p.entry)}</strong></div>
+      <div class="t"><span>Target</span><strong>${fmt(p.target)}</strong></div>
+      <div class="s"><span>Stop-loss</span><strong>${fmt(p.stop_loss)}</strong></div>
+      <div><span>Confidence</span><strong>${p.confidence}%</strong></div>
+      <div><span>Today vs yesterday</span><strong id="dayChg">–</strong></div>
+      <div><span>Trade points</span><strong id="tradePts">–</strong></div>
+    </div>
+    <div class="plan" id="plan"></div>
+    <div id="chart"></div>
+    <div class="legend"><span><i style="background:${css("--entry")}"></i>Entry</span>
+      <span><i style="background:${css("--long")}"></i>Target</span><span><i style="background:${css("--short")}"></i>Stop-loss</span>
+      <span><i style="background:${css("--focus")}"></i>VWAP</span><span>Entry valid for ${p.valid_bars * 5} minutes after ${new Date(p.signal_time).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span></div>
+    <div class="cols">
+      <div><h3>Why it's on the list</h3><ul>${p.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+        <p class="stats">Change ${ch.change_pct > 0 ? "+" : ""}${ch.change_pct}% vs yesterday's close, volume ${ch.rel_vol}x normal for this time,
+        ATR ${ix.atr}, MACD histogram ${ix.macd_hist}. Opening range ${fmt(ch.orl)} to ${fmt(ch.orh)}.</p>
+        <h3 style="margin-top:16px">Past win rate</h3><p class="stats">${btText}</p></div>
+      <div class="news"><h3>News: ${esc(p.news.sentiment)}</h3>${news}</div>
+    </div>`;
+  if (scroll && innerWidth < 860) $("#detail").scrollIntoView({ behavior: "smooth" });
+  await drawChart(p);
+}
+
+function newChart(el, intraday) {
+  if (chart) { chart.remove(); chart = null; }
+  chart = LightweightCharts.createChart(el, {
+    autoSize: true,
+    layout: { background: { color: css("--surface") }, textColor: css("--muted"), fontFamily: "Archivo, sans-serif" },
+    grid: { vertLines: { color: css("--line") }, horzLines: { color: css("--line") } },
+    rightPriceScale: { borderColor: css("--line") },
+    timeScale: { borderColor: css("--line"), timeVisible: intraday, secondsVisible: false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  });
+  candle = chart.addCandlestickSeries({
+    upColor: css("--long"), downColor: css("--short"), borderVisible: false,
+    wickUpColor: css("--long"), wickDownColor: css("--short"),
+  });
+}
+
+async function drawChart(p) {
+  const el = $("#chart");
+  newChart(el, true);
+  volS = chart.addHistogramSeries({ priceScaleId: "", priceFormat: { type: "volume" }, color: css("--line") });
+  volS.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  vwapS = chart.addLineSeries({ color: css("--focus"), lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+
+  const lines = [["Entry", p.entry, "--entry"], ["Target", p.target, "--long"], ["Stop-loss", p.stop_loss, "--short"]];
+  lines.forEach(([title, price, c]) => candle.createPriceLine({
+    price, title, color: css(c), lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true }));
+
+  await loadBars(p, true);
+}
+
+async function loadBars(p, fit) {
+  try {
+    const { bars } = await api(`/api/candles/${encodeURIComponent(p.symbol)}`);
+    if (mode !== "today" || selected !== p.symbol || !candle) return;
+    candle.setData(bars);
+    volS.setData(bars.map(b => ({ time: b.time, value: b.volume })));
+    // VWAP resets each session: a blank point at each new day breaks the line overnight
+    let day = null;
+    vwapS.setData(bars.map(b => {
+      const d = Math.floor(b.time / 86400), first = day !== null && d !== day;
+      day = d;
+      return first ? { time: b.time } : { time: b.time, value: b.vwap };
+    }));
+    lastBar = { ...bars[bars.length - 1] };
+    curBars = [...bars.slice(0, -1), lastBar];   // the live price keeps updating lastBar
+    const today = Math.floor(lastBar.time / 86400);
+    prevClose = bars.filter(b => Math.floor(b.time / 86400) < today).at(-1)?.close ?? null;
+    refreshPlan(p);
+    if (prices[p.symbol]) { lastBar.close = prices[p.symbol]; candle.update(lastBar); }
+    if (fit) chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 90), to: bars.length + 4 });
+  } catch (e) {
+    if (fit) $("#chart").innerHTML = `<div class="empty"><p>Chart could not load: ${esc(e.message)}</p></div>`;
+  }
+}
+
+/* ---------- trade plan: which candle, when to enter, when to exit ---------- */
+// Bar times from /api/candles are already shifted to IST, so read them as UTC.
+const IST_OFFSET = 19800, BAR_SEC = 300;
+const EXIT_BY_MIN = 15 * 60 + 15;   // square off on the 15:15 candle's close (3:20 pm) at the latest
+const barMin = t => (t % 86400) / 60;
+const clock = t => new Date(t * 1000).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", timeZone: "UTC" });
+
+// Replays the same rules as the backtest on the chart candles: entry must trigger within
+// valid_bars after the signal candle; then stop (checked first), target, or the day-end exit.
+function tradePlan(p, bars) {
+  const s = p.direction === "LONG" ? 1 : -1;
+  const sigT = Date.parse(p.signal_time) / 1000 + IST_OFFSET;
+  const i = bars.findIndex(b => b.time === sigT);
+  const day = Math.floor(sigT / 86400);
+  const plan = { s, sigT, from: sigT + BAR_SEC,
+                 until: Math.min(sigT + (p.valid_bars + 1) * BAR_SEC, day * 86400 + (EXIT_BY_MIN + 5) * 60) };
+  if (i < 0) return plan;
+  plan.signal = bars[i];
+  let seen = 0;
+  for (let j = i + 1; j < bars.length && seen < p.valid_bars; j++) {
+    const b = bars[j];
+    if (Math.floor(b.time / 86400) !== day || barMin(b.time) > EXIT_BY_MIN) { seen = p.valid_bars; break; }
+    seen++;
+    if (s > 0 ? b.high >= p.entry : b.low <= p.entry) { plan.entry = { bar: b, j }; break; }
+  }
+  if (!plan.entry) { plan.expired = seen >= p.valid_bars; return plan; }
+  for (let j = plan.entry.j; j < bars.length; j++) {
+    const b = bars[j];
+    if (Math.floor(b.time / 86400) !== day) break;
+    if (s > 0 ? b.low <= p.stop_loss : b.high >= p.stop_loss) { plan.exit = { bar: b, price: p.stop_loss, why: "stop" }; break; }
+    if (s > 0 ? b.high >= p.target : b.low <= p.target) { plan.exit = { bar: b, price: p.target, why: "target" }; break; }
+    if (barMin(b.time) >= EXIT_BY_MIN) { plan.exit = { bar: b, price: b.close, why: "time" }; break; }
+  }
+  return plan;
+}
+
+function planMarkers(p, plan) {
+  const long = plan.s > 0, m = [];
+  if (plan.signal) m.push({ time: plan.signal.time, position: long ? "belowBar" : "aboveBar", color: css("--entry"),
+    shape: "circle", text: `Signal ${clock(plan.signal.time)}` });
+  if (plan.entry) m.push({ time: plan.entry.bar.time, position: long ? "belowBar" : "aboveBar",
+    color: css(long ? "--long" : "--short"), shape: long ? "arrowUp" : "arrowDown",
+    text: `${long ? "BUY" : "SELL"} ${clock(plan.entry.bar.time)}` });
+  if (plan.exit) {
+    const x = plan.exit;
+    m.push({ time: x.bar.time, position: long ? "aboveBar" : "belowBar",
+      color: css(x.why === "target" ? "--long" : x.why === "stop" ? "--short" : "--muted"),
+      shape: long ? "arrowDown" : "arrowUp", text: `${long ? "SELL" : "BUY back"} ${clock(x.bar.time + BAR_SEC)}` });
+  }
+  return m;
+}
+
+function planHTML(p, plan) {
+  const long = plan.s > 0, act = long ? "Buy" : "Sell (short)", close = long ? "Sell" : "Buy back";
+  const window = `${clock(plan.from)} and ${clock(plan.until)}`;
+  const sig = plan.signal
+    ? `The <b>${clock(plan.sigT)}</b> candle (closed ${clock(plan.from)}). Its ${long ? "high" : "low"} was <b>${fmt(long ? plan.signal.high : plan.signal.low)}</b>.`
+    : `The ${clock(plan.sigT)} candle (not on this chart).`;
+  let entry;
+  if (plan.entry) entry = `<span class="done">Done:</span> ${long ? "bought" : "sold"} at <b>${fmt(p.entry)}</b> at <b>${clock(plan.entry.bar.time)}</b>.`;
+  else if (plan.expired) entry = `<span class="bad">Missed:</span> price did not cross ${fmt(p.entry)} between ${window}. Skip this trade.`;
+  else entry = `<span class="wait">Waiting:</span> ${act.toLowerCase()} only if price goes ${long ? "above" : "below"} <b>${fmt(p.entry)}</b> between <b>${window}</b>.`;
+  let exit;
+  if (plan.exit) {
+    const x = plan.exit, pnl = (x.price - p.entry) * plan.s;
+    const cls = x.why === "target" ? "done" : x.why === "stop" ? "bad" : "wait";
+    const why = { target: "Target hit", stop: "Stop-loss hit", time: "Day-end exit" }[x.why];
+    exit = `<span class="${cls}">${why}:</span> ${close.toLowerCase()} at <b>${fmt(x.price)}</b> at <b>${clock(x.bar.time + BAR_SEC)}</b>, ` +
+      `${pnl >= 0 ? "+" : ""}${fmt(pnl)} per share.`;
+  } else {
+    exit = `${close} at target <b>${fmt(p.target)}</b> or stop-loss <b>${fmt(p.stop_loss)}</b>, whichever comes first. ` +
+      `If neither, ${close.toLowerCase()} by <b>3:20 pm</b>.`;
+  }
+  return `<div><span class="step">1 · Signal candle</span>${sig}</div>
+    <div><span class="step">2 · ${act}</span>${entry}</div>
+    <div><span class="step">3 · ${close}</span>${exit}</div>`;
+}
+
+function refreshPlan(p) {
+  const plan = tradePlan(p, curBars);
+  candle.setMarkers(planMarkers(p, plan));
+  $("#plan").innerHTML = planHTML(p, plan);
+  curPlan = { p, plan };
+  renderPoints();
+}
+
+// Points up/down today, and points made or lost on the trade (booked once it has exited)
+function renderPoints() {
+  if (!curPlan || curPlan.p.symbol !== selected) return;
+  const { p, plan } = curPlan, price = prices[p.symbol] ?? lastBar?.close;
+  const signed = n => `${n >= 0 ? "+" : ""}${fmt(n)}`;
+  const paint = (el, n, html) => { if (!el) return; el.innerHTML = html; el.style.color = css(n > 0 ? "--long" : n < 0 ? "--short" : "--text"); };
+  if (prevClose && price != null) {
+    const d = price - prevClose;
+    paint($("#dayChg"), d, `${signed(d)} <small>(${signed(d / prevClose * 100)}%)</small>`);
+  }
+  if (plan.exit) {
+    const n = (plan.exit.price - p.entry) * plan.s;
+    paint($("#tradePts"), n, `${signed(n)} <small>booked</small>`);
+  } else if (plan.entry && price != null) {
+    const n = (price - p.entry) * plan.s;
+    paint($("#tradePts"), n, `${signed(n)} <small>running</small>`);
+  } else {
+    paint($("#tradePts"), 0, `<small>not entered</small>`);
+  }
+}
+
+/* ---------- live prices ---------- */
+async function pollPrices() {
+  const list = mode === "today" ? picks : nextPicks;
+  const syms = [...new Set([...list.map(p => p.symbol), selected].filter(Boolean))];
+  if (syms.length) {
+    try {
+      const { prices: live } = await api(`/api/ltp?symbols=${syms.map(encodeURIComponent).join(",")}`);
+      for (const [s, px] of Object.entries(live)) {
+        const prev = prices[s]; prices[s] = px;
+        document.querySelectorAll(`[data-ltp="${CSS.escape(s)}"]`).forEach(el => {
+          el.textContent = fmt(px);
+          el.classList.toggle("up", prev != null && px > prev);
+          el.classList.toggle("down", prev != null && px < prev);
+        });
+        const p = picks.find(x => x.symbol === s);
+        if (p) {
+          const dot = $(`[data-dot="${CSS.escape(s)}"]`); if (dot) dot.style.left = ladderPos(p, px) * 100 + "%";
+          const st = $(`[data-state="${CSS.escape(s)}"]`);
+          if (st) { const [t, c] = pickState(p, px); st.textContent = t; st.className = `state ${c}`; }
+        }
+        if (mode === "today" && s === selected && candle && lastBar) {
+          lastBar.close = px; lastBar.high = Math.max(lastBar.high, px); lastBar.low = Math.min(lastBar.low, px);
+          candle.update(lastBar);
+          refreshPlan(findPick(s));
+        }
+      }
+    } catch { /* keep last prices; next poll retries */ }
+  }
+  setTimeout(pollPrices, STATIC ? 60000 : 3000);
+}
+
+// Pull fresh candles for the open chart every minute
+setInterval(() => { const p = mode === "today" && selected && findPick(selected); if (p) loadBars(p, false); }, 60000);
+
+/* ---------- Next day tab: strong closers today, with a plan to buy tomorrow ---------- */
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
+
+function setMode(m) {
+  if (m === mode) return;
+  sel[mode] = selected;
+  mode = m;
+  selected = sel[m] ?? null;
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.mode === m));
+  $("#scanBtn").disabled = false;
+  if (m !== "today") {
+    $("#scanBtn").textContent = "Refresh list";
+    loadNext(false);
+  } else {
+    $("#scanBtn").textContent = STATIC ? "Reload" : "Scan now";
+    if (data) showToday(); else renderEmpty();
+  }
+}
+
+// Next weekday after the candle date (NSE holidays are not known here)
+function nextSession(iso) {
+  const d = new Date(iso + "T00:00:00Z");
+  do d.setUTCDate(d.getUTCDate() + 1); while ([0, 6].includes(d.getUTCDay()));
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+}
+const dayLabel = iso => new Date(iso + "T00:00:00Z").toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" });
+
+async function loadNext(refresh) {
+  const btn = $("#scanBtn"), want = mode, low = want === "low";
+  btn.disabled = true; btn.textContent = "Building list…";
+  $("#status").textContent = `Reading a year of daily candles for every stock${low ? " in the Nifty 500 (takes about 20 seconds the first time)" : ""}…`;
+  let res;
+  try {
+    res = await api(`/api/nextday?list=${low ? `low&max_price=${lowCap}` : "main"}${refresh ? "&refresh=1" : ""}`);
+  } catch (e) {
+    $("#status").textContent = `Next-day list failed: ${e.message}`;
+    return;
+  } finally {
+    btn.disabled = false; btn.textContent = "Refresh list";
+  }
+  if (mode !== want || (low && res.max_price !== lowCap)) return;   // user moved on while this loaded
+  nextData = res;
+  nextPicks = nextData.top;
+  const t = new Date(nextData.generated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const src = { mock: "sample data", yahoo: "Yahoo Finance" }[nextData.broker] || "Kite";
+  $("#status").textContent = `Next-day list built at ${t} from ${src}, using candles up to ${dayLabel(nextData.as_of)}. ` +
+    (low ? `${nextData.signals} of ${nextData.eligible} shares priced up to ₹${lowCap} closed strong today.`
+         : `${nextData.signals} of ${nextData.scanned} stocks closed strong today.`);
+  const note = $("#note");
+  note.style.display = nextData.note ? "block" : "none";
+  note.textContent = nextData.note || "";
+  renderNextList();
+  if (!nextPicks.length) {
+    $("#detail").innerHTML = `<div class="empty"><p>No ${low ? `share up to ₹${lowCap}` : "stock"} closed strong enough today. ` +
+      `That is normal on weak days.${low && lowCap < LOW_CAPS.at(-1) ? " Try a higher price limit." : ""}</p></div>`;
+    return;
+  }
+  selectNext(nextPicks.find(p => p.symbol === selected)?.symbol || nextPicks[0].symbol, false);
+}
+
+function honestBox() {
+  const o = nextData.overall;
+  if (!o?.trades) return "";
+  const res = o.avg_r > 0 ? "a small gain" : o.avg_r < 0 ? "a small loss" : "break-even";
+  return `<div class="honest">How this rule has done: over the past year on these ${o.stocks} ${mode === "low" ? `shares (up to ₹${lowCap})` : "stocks"} it came up
+    <b>${o.trades} times</b>. ${o.wins} hit target, ${o.losses} hit stop-loss, the rest closed at day end.
+    Average <b>${o.avg_r > 0 ? "+" : ""}${o.avg_r}R</b> per trade, ${res}. Use this as a watchlist, not a sure buy.</div>`;
+}
+
+function renderNextList() {
+  const item = (p, i) => {
+    const bt = p.backtest;
+    const hist = bt.win_rate == null ? "no history" : `${bt.avg_r > 0 ? "+" : ""}${bt.avg_r}R avg of ${bt.trades}`;
+    return `<button class="pick" data-sym="${esc(p.symbol)}" aria-current="${p.symbol === selected}">
+      <div class="row1">${i == null ? "" : `<span class="rank">${i + 1}</span>`}<span class="sym">${esc(p.symbol)}</span>
+        <span class="side LONG">Buy above ${fmt(p.entry)}</span>
+        <span class="ltp" data-ltp="${esc(p.symbol)}">${fmt(prices[p.symbol] ?? p.ltp)}</span></div>
+      <div class="row2"><span>Today <b style="color:${css("--long")}">+${p.today.change_pct}%</b></span>
+        <span>Volume <b>${p.today.rel_vol}x</b></span><span>Past <b>${hist}</b></span></div>
+    </button>`;
+  };
+  const caps = mode !== "low" ? "" : `<div class="caps" role="group" aria-label="Price limit">Price up to
+    ${LOW_CAPS.map(c => `<button data-cap="${c}" aria-pressed="${c === lowCap}">₹${c}</button>`).join("")}</div>`;
+  let html = caps + honestBox() + nextPicks.map(item).join("");
+  if (nextData.watchlist?.length) html += `<div class="group">Also close</div>` + nextData.watchlist.map(p => item(p)).join("");
+  if (!nextPicks.length) html += `<div class="empty"><p>No ${mode === "low" ? `share up to ₹${lowCap}` : "stock"} passed every check today.</p></div>`;
+  $("#list").innerHTML = html;
+  $("#list").querySelectorAll("[data-cap]").forEach(b => b.onclick = () => { lowCap = +b.dataset.cap; loadNext(false); });
+  $("#list").querySelectorAll(".pick").forEach(b => b.onclick = () => selectNext(b.dataset.sym, true));
+}
+
+async function selectNext(sym, scroll) {
+  selected = sym;
+  document.querySelectorAll(".pick").forEach(b => b.setAttribute("aria-current", b.dataset.sym === sym));
+  const p = [...nextData.top, ...(nextData.watchlist || [])].find(x => x.symbol === sym);
+  const t = p.today, bt = p.backtest, tomorrow = nextSession(t.date);
+  const btText = bt.trades
+    ? `Over the past year this setup came up ${bt.trades} times on ${esc(p.symbol)}: ${bt.wins} hit target, ${bt.losses} hit stop-loss, ` +
+      `the rest closed at day end. Average ${bt.avg_r > 0 ? "+" : ""}${bt.avg_r}R per trade.` +
+      (bt.reliable ? "" : " Small sample, treat with caution.") +
+      " Measured on daily candles: a day that touched both stop and target counts as a loss."
+    : "This setup has not come up on this stock in the past year.";
+  $("#detail").innerHTML = `
+    <div class="dhead"><h2>${esc(p.symbol)}</h2><span class="side LONG">Buy setup for ${tomorrow}</span>
+      <span class="company">${esc(p.name)}</span>${googleLink(p.symbol)}</div>
+    <div class="levels">
+      <div><span>Close${dayLabel(t.date)}</span><strong>${fmt(t.close)}</strong></div>
+      <div class="e"><span>Buy above (${tomorrow})</span><strong>${fmt(p.entry)}</strong></div>
+      <div class="t"><span>Target</span><strong>${fmt(p.target)}</strong></div>
+      <div class="s"><span>Stop-loss</span><strong>${fmt(p.stop_loss)}</strong></div>
+      <div><span>Skip if it opens above</span><strong>${fmt(p.skip_above)}</strong></div>
+      <div><span>Strength</span><strong>${p.confidence}%</strong></div>
+    </div>
+    <div class="plan">
+      <div><span class="step">1 · Today, ${dayLabel(t.date)}</span>Closed at <b>${fmt(t.close)}</b>, near the day's high of <b>${fmt(t.high)}</b>.
+        Up <b>${t.change_pct}%</b> on ${t.rel_vol}x normal volume.</div>
+      <div><span class="step">2 · Buy on ${tomorrow}</span><span class="wait">Only if</span> price goes above <b>${fmt(p.entry)}</b>
+        between <b>9:30 am and 2:30 pm</b>. If it opens above <b>${fmt(p.skip_above)}</b>, skip: the move already happened.</div>
+      <div><span class="step">3 · Sell the same day</span>At target <b>${fmt(p.target)}</b> or stop-loss <b>${fmt(p.stop_loss)}</b>,
+        whichever comes first. If neither, sell by <b>3:20 pm</b>.</div>
+    </div>
+    <div id="chart"></div>
+    <div class="legend"><span><i style="background:${css("--entry")}"></i>Buy above</span>
+      <span><i style="background:${css("--long")}"></i>Target</span><span><i style="background:${css("--short")}"></i>Stop-loss</span>
+      <span><i style="background:${css("--focus")}"></i>20-day average</span><span><i style="background:${css("--muted")}"></i>50-day average</span>
+      <span>Daily candles</span></div>
+    <div class="cols">
+      <div><h3>Why it's on the list</h3><ul>${p.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>
+        <p class="stats">Daily ATR ${t.atr}, RSI ${t.rsi}. Day range ${fmt(t.low)} to ${fmt(t.high)}.</p></div>
+      <div><h3>Past result on this stock</h3><p class="stats">${btText}</p></div>
+    </div>`;
+  if (scroll && innerWidth < 860) $("#detail").scrollIntoView({ behavior: "smooth" });
+  await drawDaily(p);
+}
+
+async function drawDaily(p) {
+  newChart($("#chart"), false);
+  const ma = c => chart.addLineSeries({ color: css(c), lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+  const ema20 = ma("--focus"), ema50 = ma("--muted");
+  volS = chart.addHistogramSeries({ priceScaleId: "", priceFormat: { type: "volume" }, color: css("--line") });
+  volS.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+  [["Buy above", p.entry, "--entry"], ["Target", p.target, "--long"], ["Stop-loss", p.stop_loss, "--short"]]
+    .forEach(([title, price, c]) => candle.createPriceLine({
+      price, title, color: css(c), lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true }));
+  try {
+    const { bars } = await api(`/api/daily/${encodeURIComponent(p.symbol)}`);
+    if (selected !== p.symbol || mode === "today") return;
+    candle.setData(bars);
+    volS.setData(bars.map(b => ({ time: b.time, value: b.volume })));
+    ema20.setData(bars.map(b => ({ time: b.time, value: b.ema20 })));
+    ema50.setData(bars.map(b => ({ time: b.time, value: b.ema50 })));
+    candle.setMarkers([{ time: p.today.date, position: "belowBar", color: css("--entry"), shape: "arrowUp", text: "Strong close" }]);
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 70), to: bars.length + 3 });
+  } catch (e) {
+    $("#chart").innerHTML = `<div class="empty"><p>Chart could not load: ${esc(e.message)}</p></div>`;
+  }
+}
+
+pollStatus();
+pollPrices();
+</script>
+</body>
+</html>
